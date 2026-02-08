@@ -59,7 +59,7 @@ def start_server():
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Evita error de puerto ocupado
     server.bind(("172.25.250.9", 5000))
     server.listen(5)
-    print("[*] Servidor mejorado escuchando en 127.0.0.1:5000")
+    print("[*] Servidor mejorado escuchando")
 
     while True:
         conn, addr = server.accept()
