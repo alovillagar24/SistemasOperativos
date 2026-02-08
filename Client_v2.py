@@ -1,8 +1,9 @@
 # ===== CLIENTE (usa middleware y envía password) =====
 
 import socket
-import middleware  # Asegúrate de que middleware.seleccionar() devuelva HOST, PORT, PASSWORD
+import middleware  # Asegúrate de que el archivo middleware.py esté en la misma carpeta
 
+# Obtenemos los datos del servidor elegido
 HOST, PORT, PASSWORD = middleware.seleccionar()
 
 def enviar_y_recibir(op, extra=""):
@@ -11,41 +12,50 @@ def enviar_y_recibir(op, extra=""):
             s.settimeout(5)
             s.connect((HOST, PORT))
             
-            # 1. Enviamos contraseña
+            # 1. Enviamos contraseña con salto de línea
             s.sendall(f"{PASSWORD}\n".encode())
             
-            # --- NUEVO: Esperar confirmación del servidor ---
-            # Esto evita que el password y la op se mezclen en el buffer
+            # --- MANEJO DE AUTENTICACIÓN ---
+            # Esperamos la respuesta del servidor antes de mandar la operación
             confirmacion = s.recv(1024).decode().strip()
             
-            if confirmacion != "OK":
-                print(f"\n[SERVIDOR]: {confirmacion}") # Mostrará "ERROR"
+            # Verificamos si la respuesta contiene "OK" (así aceptamos "OK" u "OK: Autenticado")
+            if "OK" not in confirmacion.upper():
+                print(f"\n[SERVIDOR]: Acceso Denegado -> {confirmacion}")
                 return
 
-            # 2. Si recibimos OK, enviamos la operación
+            # 2. Si el password fue aceptado, enviamos la operación
             s.sendall(f"{op}\n".encode())
             
-            # 3. Enviamos datos extra si existen (como el comando o el PID)
+            # 3. Enviamos datos extra (el nombre del comando o el PID)
             if extra:
+                # Pequeña pausa para asegurar que el servidor esté listo para el segundo dato
                 s.sendall(f"{extra}\n".encode())
             
-            # 4. Leer los resultados (la lista de procesos o mensaje de éxito)
-            print("\n" + "="*30)
-            print("[SERVIDOR]:")
+            # 4. Leer la respuesta del servidor (Lista de procesos o estados)
+            print("\n" + "="*40)
+            print(f"Respuesta desde {HOST}:")
+            print("-" * 40)
+            
+            # Leemos en bucle para recibir datos largos (como la lista de procesos)
             while True:
                 respuesta = s.recv(4096).decode(errors='ignore')
                 if not respuesta:
                     break
-                print(respuesta, end="") # end="" porque la respuesta ya trae sus \n
-            print("\n" + "="*30)
+                print(respuesta, end="") 
+            print("\n" + "="*40)
 
     except ConnectionRefusedError:
-        print("\n[!] Error: No se pudo conectar al servidor.")
+        print(f"\n[!] Error: No se pudo conectar al servidor en {HOST}:{PORT}")
+    except socket.timeout:
+        print("\n[!] Error: El servidor no respondió a tiempo.")
     except Exception as e:
-        print(f"\n[!] Error: {e}")
+        print(f"\n[!] Error inesperado: {e}")
 
+# --- MENÚ INTERACTIVO ---
 while True:
     print("\n--- PANEL DE CONTROL REMOTO ---")
+    print(f"Conectado a: {HOST}")
     print("1) Listar Procesos")
     print("2) Iniciar Aplicación")
     print("3) Detener (Kill) PID")
@@ -57,7 +67,7 @@ while True:
         enviar_y_recibir("1")
 
     elif op == "2":
-        cmd = input("Comando a iniciar (ej. gedit): ").strip()
+        cmd = input("Comando a iniciar (ej. gedit, sleep 100): ").strip()
         if cmd:
             enviar_y_recibir("2", cmd)
 
@@ -66,8 +76,8 @@ while True:
         if pid.isdigit():
             enviar_y_recibir("3", pid)
         else:
-            print("Por favor, introduce un número de PID válido.")
+            print("Entrada inválida. El PID debe ser un número.")
 
     elif op == "0":
-        print("Saliendo...")
+        print("Cerrando cliente...")
         break
