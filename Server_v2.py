@@ -2,70 +2,67 @@
 
 import socket
 import subprocess
-import threading
-import shlex  # Para parsear comandos de forma segura
 
 PASSWORD = "clave159"
-WHITELIST = ["sleep", "gedit", "python", "ls"]
+WHITELIST = ["sleep", "gedit", "python", "ls", "calc", "notepad"]
 
-def handle_client(conn, addr):
+def handle_client(conn):
     try:
-        # 1. Recibir password (buffer de 1024 es más eficiente)
+        # 1. Recibir y validar Password
         pwd = conn.recv(1024).decode().strip()
-        if pwd != PASSWORD:
-            conn.sendall(b"ERROR: Password incorrecta\n")
-            return
-
-        conn.sendall(b"OK: Autenticado\n")
         
-        # 2. Recibir operación
+        if pwd != PASSWORD:
+            print("Password incorrecta.")
+            conn.sendall(b"ERROR\n")
+            return
+        
+        # Enviamos OK para que el cliente sepa que puede enviar la operación
+        conn.sendall(b"OK\n") 
+
+        # 2. Recibir Operación
         op = conn.recv(1024).decode().strip()
+        print(f"Operación solicitada: {op}")
         
         if op == "1": # LISTAR
-            # Usamos check_output para capturar la lista y enviarla al cliente
-            resultado = subprocess.check_output("ps -eo pid,comm | tail -n 20", shell=True)
+            # Capturamos la salida para que el cliente la reciba
+            resultado = subprocess.check_output("ps -eo pid,comm | tail -n 15", shell=True)
             conn.sendall(resultado)
 
         elif op == "2": # INICIAR
-            conn.sendall(b"Esperando comando...\n")
-            cmd_line = conn.recv(1024).decode().strip()
+            # El cliente envía el comando tras elegir opción 2
+            cmd = conn.recv(1024).decode().strip()
             
-            # Validar contra whitelist de forma segura
-            base_cmd = cmd_line.split()[0]
-            if base_cmd in WHITELIST:
-                # Ejecución en segundo plano sin shell=True (evita inyecciones)
-                args = shlex.split(cmd_line)
-                subprocess.Popen(args) 
-                conn.sendall(f"SUCCESS: {base_cmd} iniciado\n".encode())
+            # Verificamos si el comando base está en la whitelist
+            if any(w in cmd for w in WHITELIST):
+                # stdout=subprocess.DEVNULL evita que el servidor se trabe
+                subprocess.Popen(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                conn.sendall(f"SUCCESS: Iniciado {cmd}\n".encode())
             else:
-                conn.sendall(b"ERROR: Comando no permitido\n")
+                conn.sendall(b"ERROR: Comando no permitido en Whitelist\n")
 
         elif op == "3": # DETENER
-            conn.sendall(b"PID a detener?\n")
+            # El cliente envía el PID tras elegir opción 3
             pid = conn.recv(1024).decode().strip()
             if pid.isdigit():
                 subprocess.run(["kill", pid])
-                conn.sendall(b"SUCCESS: Proceso terminado\n")
+                conn.sendall(f"SUCCESS: PID {pid} detenido\n".encode())
             else:
                 conn.sendall(b"ERROR: PID invalido\n")
 
     except Exception as e:
-        print(f"Error con {addr}: {e}")
+        print(f"Error procesando cliente: {e}")
     finally:
         conn.close()
 
-def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Evita error de puerto ocupado
-    server.bind(("172.25.250.9", 5000))
-    server.listen(5)
-    print("[*] Servidor mejorado escuchando")
+# --- Configuración del Servidor ---
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(("172.25.250.9", 5000))
+server.listen(1)
 
-    while True:
-        conn, addr = server.accept()
-        # Multihilo para no bloquear el servidor
-        thread = threading.Thread(target=handle_client, args=(conn, addr))
-        thread.start()
+print("Servidor listo y escuchando en 172.25.250.9:5000...")
 
-if __name__ == "__main__":
-    start_server()
+while True:
+    conn, addr = server.accept()
+    print(f"Conexión establecida desde: {addr}")
+    handle_client(conn)
