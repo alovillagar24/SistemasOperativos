@@ -7,38 +7,42 @@ HOST, PORT, PASSWORD = middleware.seleccionar()
 
 def enviar_y_recibir(op, extra=""):
     try:
-        # Creamos el socket
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(5) # No esperar eternamente si el servidor falla
+            s.settimeout(5)
             s.connect((HOST, PORT))
             
-            # 1. Enviamos contraseña (con salto de línea para tu servidor actual)
+            # 1. Enviamos contraseña
             s.sendall(f"{PASSWORD}\n".encode())
             
-            # 2. Enviamos la operación
+            # --- NUEVO: Esperar confirmación del servidor ---
+            # Esto evita que el password y la op se mezclen en el buffer
+            confirmacion = s.recv(1024).decode().strip()
+            
+            if confirmacion != "OK":
+                print(f"\n[SERVIDOR]: {confirmacion}") # Mostrará "ERROR"
+                return
+
+            # 2. Si recibimos OK, enviamos la operación
             s.sendall(f"{op}\n".encode())
             
-            # 3. Enviamos datos extra si existen
+            # 3. Enviamos datos extra si existen (como el comando o el PID)
             if extra:
                 s.sendall(f"{extra}\n".encode())
             
-            # 4. LEER LA RESPUESTA (La mejora clave)
+            # 4. Leer los resultados (la lista de procesos o mensaje de éxito)
             print("\n" + "="*30)
             print("[SERVIDOR]:")
-            # Leemos en un bucle por si la lista de procesos es larga
             while True:
                 respuesta = s.recv(4096).decode(errors='ignore')
                 if not respuesta:
                     break
-                print(respuesta)
-            print("="*30)
+                print(respuesta, end="") # end="" porque la respuesta ya trae sus \n
+            print("\n" + "="*30)
 
     except ConnectionRefusedError:
-        print("\n[!] Error: El servidor no está encendido o la IP/Puerto son incorrectos.")
-    except socket.timeout:
-        print("\n[!] Error: El servidor tardó demasiado en responder.")
+        print("\n[!] Error: No se pudo conectar al servidor.")
     except Exception as e:
-        print(f"\n[!] Ocurrió un error inesperado: {e}")
+        print(f"\n[!] Error: {e}")
 
 while True:
     print("\n--- PANEL DE CONTROL REMOTO ---")
